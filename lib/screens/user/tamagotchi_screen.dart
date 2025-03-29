@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_ssc/theme/app_theme.dart';
 import 'package:flutter_ssc/screens/user/weekly_routines_screen.dart';
 import 'package:flutter_ssc/screens/user/class_booking_screen.dart';
+import 'package:flutter_ssc/screens/user/routine_validation_screen.dart';
+import 'package:flutter_ssc/models/routine.dart';
 
 class TamagotchiScreen extends StatefulWidget {
   const TamagotchiScreen({super.key});
@@ -20,8 +22,7 @@ class _TamagotchiScreenState extends State<TamagotchiScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sunday Sport Club'),
-        // Ne pas définir de leading personnalisé
-        // Flutter affichera automatiquement l'icône hamburger pour le drawer
+        // Laisser Flutter gérer automatiquement l'icône hamburger
         actions: [
           IconButton(
             icon: const Icon(Icons.calendar_today),
@@ -34,7 +35,7 @@ class _TamagotchiScreenState extends State<TamagotchiScreen> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.list),
+            icon: const Icon(Icons.fitness_center),
             onPressed: () {
               // Navigation vers l'écran des routines
               Navigator.push(
@@ -44,6 +45,99 @@ class _TamagotchiScreenState extends State<TamagotchiScreen> {
             },
           ),
         ],
+      ),
+      // Implémentation d'un drawer local
+      drawer: Drawer(
+        backgroundColor: AppTheme.backgroundColor,
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            const UserAccountsDrawerHeader(
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor,
+              ),
+              accountName: Text(
+                'Thomas Martin',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              accountEmail: Text(
+                'Membre',
+                style: TextStyle(
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+              currentAccountPicture: CircleAvatar(
+                backgroundColor: AppTheme.accentColor,
+                child: Text(
+                  'T',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+            ),
+            
+            // Menu utilisateur
+            ListTile(
+              leading: const Icon(Icons.pets, color: AppTheme.accentColor),
+              title: const Text('Mon Tamagotchi'),
+              onTap: () {
+                Navigator.pop(context); // Ferme le drawer
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.fitness_center, color: Colors.white),
+              title: const Text('Mes routines'),
+              onTap: () {
+                Navigator.pop(context); // Ferme le drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const WeeklyRoutinesScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.calendar_today, color: Colors.white),
+              title: const Text('Réserver un cours'),
+              onTap: () {
+                Navigator.pop(context); // Ferme le drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ClassBookingScreen()),
+                );
+              },
+            ),
+          
+            const Divider(color: Colors.grey),
+            
+            // Paramètres et déconnexion
+            ListTile(
+              leading: const Icon(Icons.settings, color: Colors.grey),
+              title: const Text('Paramètres'),
+              onTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Paramètres (à venir)')),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.redAccent),
+              title: const Text('Déconnexion'),
+              onTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Déconnexion (à venir)')),
+                );
+              },
+            ),
+          ],
+        ),
       ),
       body: Column(
         children: [
@@ -125,16 +219,22 @@ class _TamagotchiScreenState extends State<TamagotchiScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 15),
               ),
               onPressed: () {
-                // Navigation vers l'écran de validation des routines
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Commencer ma routine')),
+                // Créer une routine de démonstration 
+                final routine = Routine(
+                  id: 'demo-routine-1',
+                  name: 'Routine d\'entraînement',
+                  description: '3 séries de 10 exercices',
+                  userId: 'user123',
+                  assignedDate: DateTime.now(),
                 );
                 
-                // Quand vous aurez créé l'écran de validation, vous pourrez utiliser cette navigation:
-                // Navigator.push(
-                //   context,
-                //   MaterialPageRoute(builder: (context) => const RoutineValidationScreen()),
-                // );
+                // Navigation vers l'écran de validation
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => RoutineValidationScreen(routine: routine),
+                  ),
+                );
               },
               child: const Text(
                 'Commencer ma routine',
@@ -144,7 +244,6 @@ class _TamagotchiScreenState extends State<TamagotchiScreen> {
           ),
         ],
       ),
-      // Ne pas définir de drawer ici, il est déjà défini dans AppNavigation
     );
   }
 }

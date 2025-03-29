@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_ssc/models/routine.dart';
 import 'package:flutter_ssc/theme/app_theme.dart';
+import 'package:flutter_ssc/screens/user/routine_validation_screen.dart';
+import 'package:flutter_ssc/screens/user/class_booking_screen.dart';
 
 class WeeklyRoutinesScreen extends StatefulWidget {
   const WeeklyRoutinesScreen({super.key});
@@ -107,23 +109,96 @@ class _WeeklyRoutinesScreenState extends State<WeeklyRoutinesScreen> {
 
   // Formater une date pour l'affichage
   String _formatDate(DateTime date) {
-    return DateFormat('E d MMM', 'fr_FR').format(date);
+    return DateFormat('E. d MMMM', 'fr_FR').format(date);
+  }
+
+  // Marquer une routine comme complétée/non complétée
+  void _toggleRoutineCompletion(Routine routine) {
+    setState(() {
+      // Localiser et modifier la routine dans la liste
+      final index = _routines.indexWhere((r) => r.id == routine.id);
+      if (index != -1) {
+        // Créer une nouvelle routine avec le statut inversé
+        final updatedRoutine = Routine(
+          id: routine.id,
+          name: routine.name,
+          description: routine.description,
+          userId: routine.userId,
+          assignedDate: routine.assignedDate,
+          isCompleted: !routine.isCompleted,
+        );
+        
+        // Remplacer l'ancienne routine par la nouvelle
+        _routines[index] = updatedRoutine;
+        
+        // Afficher un message de confirmation
+        final message = updatedRoutine.isCompleted
+            ? 'Bravo ! Routine "${routine.name}" complétée !'
+            : 'Routine "${routine.name}" marquée comme non complétée';
+            
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: updatedRoutine.isCompleted
+                ? AppTheme.successColor
+                : Colors.grey[700],
+          ),
+        );
+        
+        // TODO: Mettre à jour le statut dans Firebase
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-  title: const Text('Mes routines de la semaine'),
-  centerTitle: true,
-  // Ajouter un bouton de retour
-  leading: IconButton(
-    icon: const Icon(Icons.arrow_back),
-    onPressed: () {
-      Navigator.of(context).pop();
-    },
-  ),
-),
+        title: const Text('Mes routines de la semaine'),
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+        ),
+        actions: [
+          // Aide / Informations sur cet écran
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: 'Aide',
+            onPressed: () {
+              // Afficher un dialogue d'aide
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  backgroundColor: AppTheme.cardColor,
+                  title: const Text('Comment ça marche'),
+                  content: const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Cet écran affiche vos routines assignées pour chaque jour de la semaine.'),
+                      SizedBox(height: 8),
+                      Text('• Naviguez entre les semaines avec les flèches en haut'),
+                      Text('• Appuyez sur une routine pour voir ses détails'),
+                      Text('• Cochez le cercle à droite pour marquer une routine comme terminée'),
+                      SizedBox(height: 8),
+                      Text('Le bouton flottant en bas à droite vous permet de commencer vos routines d\'aujourd\'hui.'),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Compris !'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       body: Column(
         children: [
           // En-tête avec navigation de semaine
@@ -137,8 +212,8 @@ class _WeeklyRoutinesScreenState extends State<WeeklyRoutinesScreen> {
                   onPressed: _previousWeek,
                 ),
                 Text(
-                  'Semaine du ${DateFormat('d MMM', 'fr_FR').format(_weekStartDate)}',
-                  style: Theme.of(context).textTheme.displaySmall,
+                  'Semaine du ${DateFormat('d MMMM', 'fr_FR').format(_weekStartDate)}',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
                 IconButton(
                   icon: const Icon(Icons.arrow_forward_ios),
@@ -210,15 +285,123 @@ class _WeeklyRoutinesScreenState extends State<WeeklyRoutinesScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // Navigation vers l'écran de validation des routines
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Navigation vers l\'écran de validation')),
-          );
-        },
-        backgroundColor: AppTheme.primaryColor,
-        child: const Icon(Icons.fitness_center),
+floatingActionButton: FloatingActionButton(
+  onPressed: () {
+    // Version simplifiée qui prend simplement la première routine comme exemple
+    if (_routines.isNotEmpty) {
+      // Prendre simplement la première routine comme exemple
+      final sampleRoutine = _routines.first;
+      
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => RoutineValidationScreen(routine: sampleRoutine),
+        ),
+      ).then((_) {
+        setState(() {
+          _loadRoutines();
+        });
+      });
+    } else {
+      // Pas de routines disponibles
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aucune routine disponible')),
+      );
+    }
+  },
+  backgroundColor: AppTheme.primaryColor,
+  child: const Icon(Icons.fitness_center),
+),
+      // Ajout d'un drawer
+      drawer: Drawer(
+        backgroundColor: AppTheme.backgroundColor,
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            const UserAccountsDrawerHeader(
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor,
+              ),
+              accountName: Text(
+                'Thomas Martin',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              accountEmail: Text(
+                'Membre',
+                style: TextStyle(
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+              currentAccountPicture: CircleAvatar(
+                backgroundColor: AppTheme.accentColor,
+                child: Text(
+                  'T',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+            ),
+            
+            // Menu utilisateur
+            ListTile(
+              leading: const Icon(Icons.pets, color: AppTheme.accentColor),
+              title: const Text('Mon Tamagotchi'),
+              onTap: () {
+                Navigator.pop(context); // Ferme le drawer
+                Navigator.pop(context); // Retourne à l'écran Tamagotchi
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.fitness_center, color: Colors.white),
+              title: const Text('Mes routines'),
+              onTap: () {
+                Navigator.pop(context); // Ferme le drawer
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.calendar_today, color: Colors.white),
+              title: const Text('Réserver un cours'),
+              onTap: () {
+                Navigator.pop(context); // Ferme le drawer
+                // Navigation vers l'écran de réservation
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ClassBookingScreen()),
+                );
+              },
+            ),
+          
+            const Divider(color: Colors.grey),
+            
+            // Paramètres et déconnexion
+            ListTile(
+              leading: const Icon(Icons.settings, color: Colors.grey),
+              title: const Text('Paramètres'),
+              onTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Paramètres (à venir)')),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.redAccent),
+              title: const Text('Déconnexion'),
+              onTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Déconnexion (à venir)')),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -241,30 +424,41 @@ class _WeeklyRoutinesScreenState extends State<WeeklyRoutinesScreen> {
           decoration: routine.isCompleted ? TextDecoration.lineThrough : null,
         ),
       ),
-      trailing: Container(
-        width: 24,
-        height: 24,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: routine.isCompleted ? AppTheme.successColor : Colors.transparent,
-          border: Border.all(
-            color: routine.isCompleted ? AppTheme.successColor : Colors.grey,
-            width: 2,
+      trailing: InkWell(
+        onTap: () => _toggleRoutineCompletion(routine),
+        child: Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: routine.isCompleted ? AppTheme.successColor : Colors.transparent,
+            border: Border.all(
+              color: routine.isCompleted ? AppTheme.successColor : Colors.grey,
+              width: 2,
+            ),
           ),
+          child: routine.isCompleted
+              ? const Icon(
+                  Icons.check,
+                  color: Colors.white,
+                  size: 16,
+                )
+              : null,
         ),
-        child: routine.isCompleted
-            ? const Icon(
-                Icons.check,
-                color: Colors.white,
-                size: 16,
-              )
-            : null,
       ),
       onTap: () {
-        // Afficher les détails de la routine ou permettre de la valider
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Détails de ${routine.name}')),
-        );
+        // Naviguer vers l'écran de validation pour cette routine
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => RoutineValidationScreen(routine: routine),
+          ),
+        ).then((_) {
+          // Recharger les routines après le retour de l'écran de validation
+          setState(() {
+            _loadRoutines();
+          });
+        });
       },
     );
   }
