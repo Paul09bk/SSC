@@ -43,3 +43,19 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Ajouts optionnels
+*.lock  # Pour pubspec.lock si vous ne voulez pas le commiter
+*.env   # Pour les fichiers d'environnement
+
+# Firebase (si utilisé)
+google-services.json
+GoogleService-Info.plist
+
+# Fichiers de configuration IDE supplémentaires
+.vscode/
+*.code-workspace
+
+# Fichiers de log et de débogage supplémentaires
+*.stackdump
+*.log.*

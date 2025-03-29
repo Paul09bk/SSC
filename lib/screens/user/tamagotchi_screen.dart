@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_ssc/theme/app_theme.dart';
+import 'package:flutter_ssc/screens/user/weekly_routines_screen.dart';
+import 'package:flutter_ssc/screens/user/class_booking_screen.dart';
 
 class TamagotchiScreen extends StatefulWidget {
   const TamagotchiScreen({super.key});
 
   @override
-  _TamagotchiScreenState createState() => _TamagotchiScreenState();
+  State<TamagotchiScreen> createState() => _TamagotchiScreenState();
 }
 
 class _TamagotchiScreenState extends State<TamagotchiScreen> {
@@ -23,8 +25,9 @@ class _TamagotchiScreenState extends State<TamagotchiScreen> {
             icon: const Icon(Icons.calendar_today),
             onPressed: () {
               // Navigation vers l'écran de réservation
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Écran de réservation à venir')),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ClassBookingScreen()),
               );
             },
           ),
@@ -32,8 +35,9 @@ class _TamagotchiScreenState extends State<TamagotchiScreen> {
             icon: const Icon(Icons.list),
             onPressed: () {
               // Navigation vers l'écran des routines
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Écran des routines à venir')),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const WeeklyRoutinesScreen()),
               );
             },
           ),
@@ -119,10 +123,16 @@ class _TamagotchiScreenState extends State<TamagotchiScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 15),
               ),
               onPressed: () {
-                // Navigation vers l'écran de validation des routines
+                // Navigation vers l'écran de validation des routines (vous devez créer un écran spécifique)
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Écran de validation des routines à venir')),
                 );
+                
+                // Quand vous aurez créé l'écran de validation, vous pourrez utiliser cette navigation:
+                // Navigator.push(
+                //   context,
+                //   MaterialPageRoute(builder: (context) => const RoutineValidationScreen()),
+                // );
               },
               child: const Text(
                 'Commencer ma routine',
@@ -132,6 +142,8 @@ class _TamagotchiScreenState extends State<TamagotchiScreen> {
           ),
         ],
       ),
+      // Ajout d'un bouton drawer pour être sûr que le drawer soit accessible
+      drawer: null, // Le drawer est défini dans AppNavigation
     );
   }
 }
