@@ -138,9 +138,16 @@ class _ClassBookingScreenState extends State<ClassBookingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Réservation de cours'),
-        centerTitle: true,
-      ),
+  title: const Text('Mes routines de la semaine'),
+  centerTitle: true,
+  // Ajouter un bouton de retour
+  leading: IconButton(
+    icon: const Icon(Icons.arrow_back),
+    onPressed: () {
+      Navigator.of(context).pop();
+    },
+  ),
+),
       body: Column(
         children: [
           // Calendrier simplifié (à remplacer par un calendrier plus complet si nécessaire)

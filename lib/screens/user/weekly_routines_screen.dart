@@ -114,9 +114,16 @@ class _WeeklyRoutinesScreenState extends State<WeeklyRoutinesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mes routines de la semaine'),
-        centerTitle: true,
-      ),
+  title: const Text('Mes routines de la semaine'),
+  centerTitle: true,
+  // Ajouter un bouton de retour
+  leading: IconButton(
+    icon: const Icon(Icons.arrow_back),
+    onPressed: () {
+      Navigator.of(context).pop();
+    },
+  ),
+),
       body: Column(
         children: [
           // En-tête avec navigation de semaine

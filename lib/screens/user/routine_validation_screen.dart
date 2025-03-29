@@ -158,18 +158,16 @@ Widget build(BuildContext context) {
     },
     child: Scaffold(
         appBar: AppBar(
-          title: const Text('Entraînement en cours'),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () {
-              if (!_isCompleted) {
-                _showExitConfirmation();
-              } else {
-                Navigator.pop(context);
-              }
-            },
-          ),
-        ),
+  title: const Text('Mes routines de la semaine'),
+  centerTitle: true,
+  // Ajouter un bouton de retour
+  leading: IconButton(
+    icon: const Icon(Icons.arrow_back),
+    onPressed: () {
+      Navigator.of(context).pop();
+    },
+  ),
+),
         body: _isCompleted 
             ? _buildCompletionScreen() 
             : _buildTrainingScreen(),

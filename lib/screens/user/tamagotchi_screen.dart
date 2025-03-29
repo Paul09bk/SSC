@@ -20,6 +20,8 @@ class _TamagotchiScreenState extends State<TamagotchiScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sunday Sport Club'),
+        // Ne pas définir de leading personnalisé
+        // Flutter affichera automatiquement l'icône hamburger pour le drawer
         actions: [
           IconButton(
             icon: const Icon(Icons.calendar_today),
@@ -123,9 +125,9 @@ class _TamagotchiScreenState extends State<TamagotchiScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 15),
               ),
               onPressed: () {
-                // Navigation vers l'écran de validation des routines (vous devez créer un écran spécifique)
+                // Navigation vers l'écran de validation des routines
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Écran de validation des routines à venir')),
+                  const SnackBar(content: Text('Commencer ma routine')),
                 );
                 
                 // Quand vous aurez créé l'écran de validation, vous pourrez utiliser cette navigation:
@@ -142,8 +144,7 @@ class _TamagotchiScreenState extends State<TamagotchiScreen> {
           ),
         ],
       ),
-      // Ajout d'un bouton drawer pour être sûr que le drawer soit accessible
-      drawer: null, // Le drawer est défini dans AppNavigation
+      // Ne pas définir de drawer ici, il est déjà défini dans AppNavigation
     );
   }
 }
