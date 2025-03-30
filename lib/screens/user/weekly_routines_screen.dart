@@ -44,50 +44,50 @@ class _WeeklyRoutinesScreenState extends State<WeeklyRoutinesScreen> {
   }
 
   // Charge les routines depuis Firebase
-  void _loadRoutines() async {
-    setState(() {
-      _isLoading = true;
-    });
+Future<void> _loadRoutines() async {
+  setState(() {
+    _isLoading = true;
+  });
+  
+  try {
+    // Récupère l'ID de l'utilisateur connecté
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      // Si aucun utilisateur n'est connecté, retourner à l'écran de connexion
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+      return; // Ce return termine la fonction sans renvoyer de Future explicite
+    }
     
-    try {
-      // Récupère l'ID de l'utilisateur connecté
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) {
-        // Si aucun utilisateur n'est connecté, retourner à l'écran de connexion
-        if (mounted) {
-          Navigator.of(context).pop();
-        }
-        return;
-      }
+    // Récupère les routines de l'utilisateur pour la semaine
+    final routines = await _firebaseService.getUserRoutinesForWeek(
+      currentUser.uid,
+      _weekStartDate,
+    );
+    
+    if (mounted) {
+      setState(() {
+        _routines = routines;
+        _isLoading = false;
+      });
+    }
+  } catch (e) {
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
       
-      // Récupère les routines de l'utilisateur pour la semaine
-      final routines = await _firebaseService.getUserRoutinesForWeek(
-        currentUser.uid,
-        _weekStartDate,
+      // Affiche un message d'erreur
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur lors du chargement des routines: $e'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
-      
-      if (mounted) {
-        setState(() {
-          _routines = routines;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-        
-        // Affiche un message d'erreur
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur lors du chargement des routines: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
     }
   }
+}
 
   // Navigation vers la semaine précédente
   void _previousWeek() {

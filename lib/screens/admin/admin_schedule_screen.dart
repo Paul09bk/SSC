@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_ssc/theme/app_theme.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_ssc/models/class_session.dart';
+import 'package:flutter_ssc/services/firebase_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AdminScheduleScreen extends StatefulWidget {
   const AdminScheduleScreen({super.key});
@@ -48,16 +51,23 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
     '19:00-20:00',
   ];
   
-  // Liste des créneaux créés (à remplacer par Firebase)
-  final List<Map<String, dynamic>> _scheduledClasses = [];
+  // Liste des créneaux créés
+  List<Map<String, dynamic>> _scheduledClasses = [];
   
   // Clé du formulaire pour la validation
   final _formKey = GlobalKey<FormState>();
+  
+  // Indicateur de chargement
+  bool _isLoading = true;
+  
+  // Service Firebase
+  final FirebaseService _firebaseService = FirebaseService();
   
   @override
   void initState() {
     super.initState();
     _selectedTimeSlot = _timeSlots.first;
+    _loadScheduledClasses();
   }
   
   @override
@@ -66,6 +76,63 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
     _maxParticipantsController.dispose();
     _durationController.dispose();
     super.dispose();
+  }
+  
+  // Charger les créneaux programmés
+  Future<void> _loadScheduledClasses() async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      // Récupérer l'ID du coach
+      final coachId = FirebaseAuth.instance.currentUser!.uid;
+      
+      // Récupérer les créneaux du coach
+      final classes = await _firebaseService.getCoachClasses(coachId);
+      
+      // Convertir les créneaux au format utilisé par l'interface
+      final slots = classes.map((classSession) {
+        // Parse les heures pour obtenir le créneau horaire
+        final startHour = DateFormat('HH:mm').format(classSession.date);
+        final endHour = DateFormat('HH:mm').format(
+          classSession.date.add(Duration(minutes: classSession.duration))
+        );
+        
+        return {
+          'id': classSession.id,
+          'title': classSession.title,
+          'date': classSession.date,
+          'timeSlot': '$startHour-$endHour',
+          'level': classSession.level,
+          'maxParticipants': classSession.maxParticipants,
+          'duration': classSession.duration,
+          'participants': classSession.participantIds,
+        };
+      }).toList();
+      
+      if (mounted) {
+        setState(() {
+          _scheduledClasses = slots;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Erreur lors du chargement des créneaux: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        
+        // Affiche un message d'erreur
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors du chargement des créneaux: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
   }
   
   // Formate une date pour l'affichage
@@ -84,7 +151,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
   }
   
   // Ajoute un créneau au calendrier
-  void _addTimeSlot() {
+  Future<void> _addTimeSlot() async {
     if (_formKey.currentState!.validate()) {
       // Vérifie si le créneau n'existe pas déjà
       if (_doesSlotExist()) {
@@ -97,47 +164,77 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
         return;
       }
       
-      // Parse les heures de début et fin à partir du créneau
-      final timeRange = _selectedTimeSlot!.split('-');
-      final startTime = timeRange[0].split(':');
-      
-      // Crée l'objet date/heure pour le créneau
-      final slotDate = DateTime(
-        _selectedDate.year,
-        _selectedDate.month,
-        _selectedDate.day,
-        int.parse(startTime[0]),
-        int.parse(startTime[1]),
-      );
-      
-      // Crée le créneau
-      final newSlot = {
-        'id': DateTime.now().millisecondsSinceEpoch.toString(),
-        'title': _titleController.text,
-        'date': slotDate,
-        'timeSlot': _selectedTimeSlot,
-        'level': _selectedLevel,
-        'maxParticipants': int.parse(_maxParticipantsController.text),
-        'duration': int.parse(_durationController.text),
-        'participants': <String>[],
-      };
-      
+      // Indique que l'opération est en cours
       setState(() {
-        _scheduledClasses.add(newSlot);
+        _isLoading = true;
       });
       
-      // Réinitialise le formulaire
-      _titleController.clear();
-      
-      // Affiche un message de confirmation
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Créneau ajouté avec succès'),
-          backgroundColor: AppTheme.successColor,
-        ),
-      );
-      
-      // TODO: Sauvegarder le créneau dans Firebase
+      try {
+        // Parse les heures de début et fin à partir du créneau
+        final timeRange = _selectedTimeSlot!.split('-');
+        final startTime = timeRange[0].split(':');
+        
+        // Crée l'objet date/heure pour le créneau
+        final slotDate = DateTime(
+          _selectedDate.year,
+          _selectedDate.month,
+          _selectedDate.day,
+          int.parse(startTime[0]),
+          int.parse(startTime[1]),
+        );
+        
+        // Récupère l'ID et le nom du coach
+        final currentUser = FirebaseAuth.instance.currentUser!;
+        final coachId = currentUser.uid;
+        final coachName = currentUser.displayName ?? 'Coach';
+        
+        // Crée l'objet ClassSession
+        final classSession = ClassSession(
+          id: '', // L'ID sera généré par Firestore
+          title: _titleController.text,
+          date: slotDate,
+          duration: int.parse(_durationController.text),
+          coachId: coachId,
+          coachName: coachName,
+          level: _selectedLevel,
+          maxParticipants: int.parse(_maxParticipantsController.text),
+        );
+        
+        // Sauvegarde dans Firebase
+        final classId = await _firebaseService.addClass(classSession);
+        
+        if (classId != null) {
+          // Affiche un message de confirmation
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Créneau ajouté avec succès'),
+              backgroundColor: AppTheme.successColor,
+            ),
+          );
+          
+          // Réinitialise le formulaire
+          _titleController.clear();
+          
+          // Recharge les créneaux
+          await _loadScheduledClasses();
+        }
+      } catch (e) {
+        // Gestion des erreurs
+        print('Erreur lors de l\'ajout du créneau: $e');
+        
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erreur lors de la création du créneau: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
     }
   }
   
@@ -157,21 +254,59 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
             child: const Text('Annuler'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
+              Navigator.pop(context); // Ferme le dialogue
+              
+              // Indique que l'opération est en cours
               setState(() {
-                _scheduledClasses.removeWhere((slot) => slot['id'] == id);
+                _isLoading = true;
               });
-              Navigator.pop(context);
               
-              // Affiche un message de confirmation
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Créneau supprimé'),
-                  backgroundColor: Colors.redAccent,
-                ),
-              );
-              
-              // TODO: Supprimer le créneau de Firebase
+              try {
+                // Suppression dans Firebase
+                final success = await _firebaseService.deleteClass(id);
+                
+                if (success) {
+                  // Affiche un message de confirmation
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Créneau supprimé'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  
+                  // Recharge les créneaux
+                  await _loadScheduledClasses();
+                } else {
+                  // Gestion de l'échec
+                  setState(() {
+                    _isLoading = false;
+                  });
+                  
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Impossible de supprimer ce créneau'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                }
+              } catch (e) {
+                // Gestion des erreurs
+                print('Erreur lors de la suppression: $e');
+                
+                if (mounted) {
+                  setState(() {
+                    _isLoading = false;
+                  });
+                  
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Erreur lors de la suppression: $e'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                }
+              }
             },
             style: TextButton.styleFrom(
               foregroundColor: Colors.redAccent,
@@ -200,50 +335,54 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
         title: const Text('Gestion du calendrier'),
         centerTitle: true,
       ),
-      body: Form(
-        key: _formKey,
-        child: Column(
-          children: [
-            // Sélecteur de date
-            _buildDateSelector(),
-            
-            // Formulaire d'ajout de créneau
-            _buildAddSlotForm(),
-            
-            const Divider(height: 32),
-            
-            // En-tête liste des créneaux
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(),
+            )
+          : Form(
+              key: _formKey,
+              child: Column(
                 children: [
-                  Text(
-                    'Créneaux du ${_formatDate(_selectedDate)}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                  // Sélecteur de date
+                  _buildDateSelector(),
+                  
+                  // Formulaire d'ajout de créneau
+                  _buildAddSlotForm(),
+                  
+                  const Divider(height: 32),
+                  
+                  // En-tête liste des créneaux
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Créneaux du ${_formatDate(_selectedDate)}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          '${_getSlotsByDate(_selectedDate).length} créneau(x)',
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  Text(
-                    '${_getSlotsByDate(_selectedDate).length} créneau(x)',
-                    style: TextStyle(
-                      color: Colors.grey[400],
-                    ),
+                  
+                  const SizedBox(height: 12),
+                  
+                  // Liste des créneaux pour la date sélectionnée
+                  Expanded(
+                    child: _buildTimeSlotsList(),
                   ),
                 ],
               ),
             ),
-            
-            const SizedBox(height: 12),
-            
-            // Liste des créneaux pour la date sélectionnée
-            Expanded(
-              child: _buildTimeSlotsList(),
-            ),
-          ],
-        ),
-      ),
     );
   }
   
@@ -317,7 +456,8 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
                       border: Border.all(
                         color: isSelected
                             ? AppTheme.primaryColor
-                        : Color.fromRGBO(158, 158, 158, 0.3)  // Valeurs RGB pour Colors.grey                        width: 1,
+                            : Color.fromRGBO(158, 158, 158, 0.3),
+                        width: 1,
                       ),
                     ),
                     child: Column(
@@ -517,9 +657,18 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _addTimeSlot,
+              onPressed: _isLoading ? null : _addTimeSlot,
               icon: const Icon(Icons.add),
-              label: const Text('Ajouter ce créneau'),
+              label: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Text('Ajouter ce créneau'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primaryColor,
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -586,13 +735,13 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                      color: Color.fromRGBO(33, 150, 243, 1.0),  // Valeurs RGB pour Colors.blue                  
-                         borderRadius: BorderRadius.circular(20),
+                        color: Color.fromRGBO(33, 150, 243, 0.2),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
                         slot['timeSlot'] as String,
                         style: const TextStyle(
-                          color: AppTheme.primaryColor,
+                          color: Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -603,7 +752,7 @@ class _AdminScheduleScreenState extends State<AdminScheduleScreen> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                    color : Color.fromRGBO(255, 235, 59, 1.0),  // Valeurs RGB pour Colors.yellow
+                        color: Color.fromRGBO(255, 235, 59, 0.2),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(

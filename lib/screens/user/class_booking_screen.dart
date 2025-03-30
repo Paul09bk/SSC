@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_ssc/theme/app_theme.dart';
+import 'package:flutter_ssc/services/firebase_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ClassBookingScreen extends StatefulWidget {
   const ClassBookingScreen({super.key});
@@ -13,64 +15,72 @@ class _ClassBookingScreenState extends State<ClassBookingScreen> {
   // La date sélectionnée dans le calendrier
   DateTime _selectedDate = DateTime.now();
   
-  // La liste des créneaux disponibles (à remplacer par des données réelles)
-  final List<Map<String, dynamic>> _availableSlots = [
-    {
-      'id': '1',
-      'date': DateTime.now().add(const Duration(days: 1, hours: 10)),
-      'duration': 60, // minutes
-      'title': 'Cours collectif Kung-Fu',
-      'coach': 'Maître Lee',
-      'maxParticipants': 10,
-      'currentParticipants': 6,
-      'level': 'Tous niveaux',
-      'isBooked': false,
-    },
-    {
-      'id': '2',
-      'date': DateTime.now().add(const Duration(days: 1, hours: 14)),
-      'duration': 45, // minutes
-      'title': 'Taekwondo avancé',
-      'coach': 'Sophia Chen',
-      'maxParticipants': 8,
-      'currentParticipants': 7,
-      'level': 'Avancé',
-      'isBooked': true,
-    },
-    {
-      'id': '3',
-      'date': DateTime.now().add(const Duration(days: 2, hours: 9)),
-      'duration': 90, // minutes
-      'title': 'Karaté débutant',
-      'coach': 'Marc Dupont',
-      'maxParticipants': 12,
-      'currentParticipants': 3,
-      'level': 'Débutant',
-      'isBooked': false,
-    },
-    {
-      'id': '4',
-      'date': DateTime.now().add(const Duration(days: 3, hours: 18)),
-      'duration': 60, // minutes
-      'title': 'Boxe thaï',
-      'coach': 'Sophie Martin',
-      'maxParticipants': 10,
-      'currentParticipants': 9,
-      'level': 'Intermédiaire',
-      'isBooked': false,
-    },
-    {
-      'id': '5',
-      'date': DateTime.now().add(const Duration(days: 4, hours: 11)),
-      'duration': 75, // minutes
-      'title': 'Jiu-jitsu brésilien',
-      'coach': 'Carlos Silva',
-      'maxParticipants': 8,
-      'currentParticipants': 4,
-      'level': 'Tous niveaux',
-      'isBooked': false,
-    },
-  ];
+  // La liste des créneaux disponibles
+  List<Map<String, dynamic>> _availableSlots = [];
+  
+  // Indique si les données sont en cours de chargement
+  bool _isLoading = true;
+  
+  // Service Firebase
+  final FirebaseService _firebaseService = FirebaseService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadClasses();
+  }
+
+  // Charge les créneaux de cours disponibles depuis Firebase
+  Future<void> _loadClasses() async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      // Récupère tous les cours disponibles
+      final classes = await _firebaseService.getAvailableClasses();
+      
+      // Convertit les classes en format utilisable par l'interface
+      final slots = classes.map((classSession) {
+        // Vérifie si l'utilisateur actuel est inscrit à ce cours
+        final userId = FirebaseAuth.instance.currentUser!.uid;
+        final isBooked = classSession.isUserRegistered(userId);
+        
+        return {
+          'id': classSession.id,
+          'date': classSession.date,
+          'duration': classSession.duration,
+          'title': classSession.title,
+          'coach': classSession.coachName,
+          'maxParticipants': classSession.maxParticipants,
+          'currentParticipants': classSession.participantIds.length,
+          'level': classSession.level,
+          'isBooked': isBooked,
+        };
+      }).toList();
+      
+      if (mounted) {
+        setState(() {
+          _availableSlots = slots;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        
+        // Affiche un message d'erreur
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors du chargement des cours: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
 
   // Filtrer les créneaux par date
   List<Map<String, dynamic>> _getSlotsByDate(DateTime date) {
@@ -88,77 +98,149 @@ class _ClassBookingScreenState extends State<ClassBookingScreen> {
   }
 
   // Réserver ou annuler un créneau
-  void _toggleBooking(String slotId) {
-    setState(() {
-      final index = _availableSlots.indexWhere((slot) => slot['id'] == slotId);
-      if (index != -1) {
-        final slot = _availableSlots[index];
+  Future<void> _toggleBooking(String slotId) async {
+    final index = _availableSlots.indexWhere((slot) => slot['id'] == slotId);
+    if (index == -1) return;
+    
+    final slot = _availableSlots[index];
+    final userId = FirebaseAuth.instance.currentUser!.uid;
+    
+    // Affiche un indicateur de chargement
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+    
+    try {
+      bool success;
+      
+      if (!slot['isBooked']) {
+        // Réserver le créneau
+        if (slot['currentParticipants'] < slot['maxParticipants']) {
+          // Appel au service Firebase pour réserver le créneau
+          success = await _firebaseService.bookClass(slotId, userId);
+          
+          if (success) {
+            // Mise à jour locale
+            setState(() {
+              slot['isBooked'] = true;
+              slot['currentParticipants']++;
+            });
+            
+            // Ferme l'indicateur de chargement
+            if (mounted) Navigator.pop(context);
+            
+            // Affiche un message de confirmation
+            _showBookingConfirmation(true, slot['title']);
+          } else {
+            // Ferme l'indicateur de chargement
+            if (mounted) Navigator.pop(context);
+            
+            // Gestion de l'échec
+            _showBookingError('Impossible de réserver ce créneau');
+          }
+        } else {
+          // Créneau complet
+          // Ferme l'indicateur de chargement
+          if (mounted) Navigator.pop(context);
+          
+          _showBookingError('Ce créneau est complet');
+        }
+      } else {
+        // Annuler la réservation
+        // Appel au service Firebase pour annuler la réservation
+        success = await _firebaseService.cancelBooking(slotId, userId);
         
-        // Vérifie si on peut réserver (pas complet)
-        if (!slot['isBooked'] && 
-            slot['currentParticipants'] < slot['maxParticipants']) {
-          // Réserve le créneau
-          slot['isBooked'] = true;
-          slot['currentParticipants']++;
+        if (success) {
+          // Mise à jour locale
+          setState(() {
+            slot['isBooked'] = false;
+            slot['currentParticipants']--;
+          });
           
-          // Affiche un message de confirmation
-          _showBookingConfirmation(true, slot['title']);
-          
-          // TODO: Mettre à jour la réservation dans Firebase
-        } else if (slot['isBooked']) {
-          // Annule la réservation
-          slot['isBooked'] = false;
-          slot['currentParticipants']--;
+          // Ferme l'indicateur de chargement
+          if (mounted) Navigator.pop(context);
           
           // Affiche un message de confirmation
           _showBookingConfirmation(false, slot['title']);
+        } else {
+          // Ferme l'indicateur de chargement
+          if (mounted) Navigator.pop(context);
           
-          // TODO: Mettre à jour la réservation dans Firebase
+          // Gestion de l'échec
+          _showBookingError('Impossible d\'annuler cette réservation');
         }
       }
-    });
+    } catch (e) {
+      // Ferme l'indicateur de chargement
+      if (mounted) Navigator.pop(context);
+      
+      // Gestion des erreurs
+      _showBookingError('Erreur: $e');
+    }
   }
 
   // Affiche une notification de confirmation
   void _showBookingConfirmation(bool isBooked, String title) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          isBooked
-              ? 'Vous avez réservé "$title"'
-              : 'Réservation annulée pour "$title"',
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isBooked
+                ? 'Vous avez réservé "$title"'
+                : 'Réservation annulée pour "$title"',
+          ),
+          backgroundColor: isBooked ? AppTheme.successColor : Colors.redAccent,
+          duration: const Duration(seconds: 3),
         ),
-        backgroundColor: isBooked ? AppTheme.successColor : Colors.redAccent,
-        duration: const Duration(seconds: 3),
-      ),
-    );
+      );
+    }
+  }
+
+  // Affiche un message d'erreur
+  void _showBookingError(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.redAccent,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-  title: const Text('Mes routines de la semaine'),
-  centerTitle: true,
-  // Ajouter un bouton de retour
-  leading: IconButton(
-    icon: const Icon(Icons.arrow_back),
-    onPressed: () {
-      Navigator.of(context).pop();
-    },
-  ),
-),
-      body: Column(
-        children: [
-          // Calendrier simplifié (à remplacer par un calendrier plus complet si nécessaire)
-          _buildCalendar(),
-          
-          // Liste des créneaux disponibles
-          Expanded(
-            child: _buildSlotsList(),
-          ),
-        ],
+        title: const Text('Réserver un cours'),
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+        ),
       ),
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(),
+            )
+          : Column(
+              children: [
+                // Calendrier simplifié
+                _buildCalendar(),
+                
+                // Liste des créneaux disponibles
+                Expanded(
+                  child: _buildSlotsList(),
+                ),
+              ],
+            ),
     );
   }
 
@@ -231,7 +313,8 @@ class _ClassBookingScreenState extends State<ClassBookingScreen> {
                       border: Border.all(
                         color: isSelected 
                             ? AppTheme.primaryColor 
-                            :  Color.fromRGBO(158, 158, 158, 0.3)  // Valeurs RGB pour Colors.grey                  width: 1,
+                            : Color.fromRGBO(158, 158, 158, 0.3),
+                        width: 1,
                       ),
                     ),
                     child: Column(
@@ -355,13 +438,13 @@ class _ClassBookingScreenState extends State<ClassBookingScreen> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                          color: Color.fromRGBO(33, 150, 243, 1.0),  // Valeurs RGB pour Colors.blue
+                        color: Color.fromRGBO(33, 150, 243, 0.2),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
                         '${_formatTime(startTime)} - ${_formatTime(endTime)}',
                         style: const TextStyle(
-                          color: AppTheme.primaryColor,
+                          color: Colors.white,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -372,7 +455,7 @@ class _ClassBookingScreenState extends State<ClassBookingScreen> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                          color: Color.fromRGBO(33, 150, 243, 1.0),  // Valeurs RGB pour Colors.blue
+                        color: Color.fromRGBO(255, 214, 0, 0.2),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(

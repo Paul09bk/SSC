@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_ssc/models/user.dart';
 import 'package:flutter_ssc/models/routine.dart';
 import 'package:flutter_ssc/models/class_session.dart';
@@ -452,4 +451,18 @@ class FirebaseService {
       return false;
     }
   }
+
+  // Dans firebase_service.dart
+Future<bool> deleteClass(String classId) async {
+  try {
+    await _classesCollection.doc(classId).delete();
+    return true;
+  } catch (e) {
+    _logger.warning('Erreur suppression classe: $e');
+    return false;
+  }
+}
+
+
+
 }

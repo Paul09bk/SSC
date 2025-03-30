@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_ssc/models/routine.dart';
 import 'package:flutter_ssc/theme/app_theme.dart';
+import 'package:flutter_ssc/services/firebase_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class RoutineValidationScreen extends StatefulWidget {
   final Routine routine;
@@ -24,6 +26,9 @@ class _RoutineValidationScreenState extends State<RoutineValidationScreen> with 
   bool _isCompleted = false;
   int _currentExerciseIndex = 0;
   int _currentSetIndex = 0;
+  
+  // Service Firebase
+  final FirebaseService _firebaseService = FirebaseService();
   
   // Décomposition fictive de la routine (à remplacer par des données réelles)
   late List<Map<String, dynamic>> _exercises;
@@ -79,7 +84,7 @@ class _RoutineValidationScreenState extends State<RoutineValidationScreen> with 
   }
   
   // Marque la série actuelle comme terminée et passe à la suivante
-  void _completeSet() {
+  Future<void> _completeSet() async {
     if (_isCompleted) return;
     
     setState(() {
@@ -94,13 +99,40 @@ class _RoutineValidationScreenState extends State<RoutineValidationScreen> with 
         // Si tous les exercices sont terminés, marque la routine comme complétée
         if (_currentExerciseIndex >= _exercises.length) {
           _isCompleted = true;
-          // TODO: Mettre à jour le statut de la routine dans Firebase
+          _markRoutineAsCompleted();
         }
       }
       
       // Mise à jour des compteurs
       _updateSetCounters();
     });
+  }
+  
+  // Mettre à jour le statut de la routine dans Firebase
+  Future<void> _markRoutineAsCompleted() async {
+    try {
+      // Met à jour le statut de la routine dans Firestore
+      await _firebaseService.completeRoutine(widget.routine.id);
+      
+      // Met à jour les statistiques de l'utilisateur (score, objectifs, etc.)
+      await _firebaseService.updateUserStats(
+        FirebaseAuth.instance.currentUser!.uid,
+        scoreIncrease: 15, // Vous pouvez ajuster cette valeur selon vos besoins
+      );
+    } catch (e) {
+      // Gestion des erreurs
+      print('Erreur lors de la mise à jour du statut de la routine: $e');
+      
+      // Vous pourriez aussi afficher un message d'erreur à l'utilisateur
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: Impossible de mettre à jour le statut de la routine'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
   }
   
   // Toggle la pause de l'entraînement
@@ -148,26 +180,29 @@ class _RoutineValidationScreenState extends State<RoutineValidationScreen> with 
   }
 
   @override
-Widget build(BuildContext context) {
-  return PopScope(
-    canPop: _isCompleted,
-    onPopInvokedWithResult: (bool didPop, dynamic result) {
-      if (!didPop) {
-        _showExitConfirmation();
-      }
-    },
-    child: Scaffold(
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: _isCompleted,
+      onPopInvokedWithResult: (bool didPop, dynamic result) {
+        if (!didPop) {
+          _showExitConfirmation();
+        }
+      },
+      child: Scaffold(
         appBar: AppBar(
-  title: const Text('Mes routines de la semaine'),
-  centerTitle: true,
-  // Ajouter un bouton de retour
-  leading: IconButton(
-    icon: const Icon(Icons.arrow_back),
-    onPressed: () {
-      Navigator.of(context).pop();
-    },
-  ),
-),
+          title: const Text('Exercice en cours'),
+          centerTitle: true,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              if (_isCompleted) {
+                Navigator.of(context).pop();
+              } else {
+                _showExitConfirmation();
+              }
+            },
+          ),
+        ),
         body: _isCompleted 
             ? _buildCompletionScreen() 
             : _buildTrainingScreen(),
