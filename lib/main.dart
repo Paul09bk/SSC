@@ -4,12 +4,13 @@ import 'package:flutter_ssc/models/user.dart';
 import 'package:flutter_ssc/navigation/app_navigation.dart';
 import 'package:flutter_ssc/screens/auth/login_screen.dart';
 import 'package:flutter_ssc/theme/app_theme.dart';
-// Import Firebase gardé en commentaire jusqu'à ce qu'il soit utilisé
-// import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_ssc/services/firebase_service.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
-// Fichier fictif à créer pour la configuration de Firebase
-// import 'firebase_options.dart';
+// Importez le fichier de configuration Firebase généré
+import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,10 +24,10 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
   
-  // TODO: Décommenter après la configuration de Firebase
-  // await Firebase.initializeApp(
-  //   options: DefaultFirebaseOptions.currentPlatform,
-  // );
+  // Initialisation de Firebase
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   
   runApp(const MyApp());
 }
@@ -129,7 +130,6 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 }
 
-// Wrapper qui vérifie l'état d'authentification
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
 
@@ -138,11 +138,9 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
-  // Simulation de l'état de connexion (à remplacer par Firebase Auth)
-  bool _isAuthenticated = false;
-  bool _isAdmin = false;
-  AppUser? _currentUser;
+  final FirebaseService _firebaseService = FirebaseService();
   bool _isLoading = true;
+  AppUser? _currentUser;
 
   @override
   void initState() {
@@ -150,29 +148,39 @@ class _AuthWrapperState extends State<AuthWrapper> {
     _checkAuthState();
   }
 
-  // Vérifie l'état d'authentification
+  // Vérifie l'état d'authentification avec Firebase
   void _checkAuthState() async {
-    // Simule un délai pour vérifier l'authentification
-    await Future.delayed(const Duration(seconds: 1));
-    
-    // Pour la démo, on définit un utilisateur fictif
-    // En réalité, c'est ici qu'on récupérerait les données de Firebase Auth
-    if (mounted) {
-      setState(() {
-        _isAuthenticated = true;
-        _isAdmin = false; // Changez à true pour tester l'interface admin
-        _currentUser = AppUser(
-          id: 'user123',
-          name: 'Thomas Martin',
-          email: 'thomas@example.com',
-          isAdmin: _isAdmin,
-          trainingScore: 75,
-          objectives: 4,
-          totalObjectives: 5,
-        );
-        _isLoading = false;
-      });
-    }
+    // Écoute les changements d'état d'authentification
+    FirebaseAuth.instance.authStateChanges().listen((User? user) async {
+      if (user == null) {
+        // L'utilisateur n'est pas connecté
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _currentUser = null;
+          });
+        }
+      } else {
+        // L'utilisateur est connecté, récupérer ses données
+        try {
+          final appUser = await _firebaseService.getUserById(user.uid);
+          
+          if (mounted) {
+            setState(() {
+              _currentUser = appUser;
+              _isLoading = false;
+            });
+          }
+        } catch (e) {
+          debugPrint('Erreur lors de la récupération des données utilisateur: $e');
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+          }
+        }
+      }
+    });
   }
 
   @override
@@ -187,16 +195,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
     }
     
     // Si l'utilisateur est authentifié, affiche l'application
-    if (_isAuthenticated && _currentUser != null) {
+    if (_currentUser != null) {
       return AppNavigation(user: _currentUser!);
     }
     
     // Sinon, affiche l'écran de connexion
-    return LoginScreen(onLogin: (user) {
-      setState(() {
-        _isAuthenticated = true;
-        _currentUser = user;
-      });
-    });
+    return const LoginScreen();
   }
 }

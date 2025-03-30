@@ -4,6 +4,8 @@ import 'package:flutter_ssc/models/routine.dart';
 import 'package:flutter_ssc/theme/app_theme.dart';
 import 'package:flutter_ssc/screens/user/routine_validation_screen.dart';
 import 'package:flutter_ssc/screens/user/class_booking_screen.dart';
+import 'package:flutter_ssc/services/firebase_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class WeeklyRoutinesScreen extends StatefulWidget {
   const WeeklyRoutinesScreen({super.key});
@@ -16,8 +18,14 @@ class _WeeklyRoutinesScreenState extends State<WeeklyRoutinesScreen> {
   // Date de début de la semaine actuelle (lundi)
   late DateTime _weekStartDate;
   
-  // Liste des routines (simulées pour l'instant)
-  late List<Routine> _routines;
+  // Liste des routines
+  List<Routine> _routines = [];
+  
+  // Indique si les routines sont en cours de chargement
+  bool _isLoading = true;
+  
+  // Service Firebase
+  final FirebaseService _firebaseService = FirebaseService();
 
   @override
   void initState() {
@@ -35,67 +43,66 @@ class _WeeklyRoutinesScreenState extends State<WeeklyRoutinesScreen> {
     _weekStartDate = now.subtract(Duration(days: weekday - 1));
   }
 
-  // Charge les routines depuis Firebase (simulé pour l'instant)
-  void _loadRoutines() {
-    // TODO: Remplacer par un appel à Firebase
-    _routines = [
-      Routine(
-        id: '1',
-        name: 'Pompes',
-        description: '3 séries de 10 pompes',
-        userId: 'user123',
-        assignedDate: _weekStartDate,
-        isCompleted: true,
-      ),
-      Routine(
-        id: '2',
-        name: 'Burpees',
-        description: '4 séries de 8 burpees',
-        userId: 'user123',
-        assignedDate: _weekStartDate.add(const Duration(days: 1)),
-        isCompleted: false,
-      ),
-      Routine(
-        id: '3',
-        name: 'Squats',
-        description: '3 séries de 15 squats',
-        userId: 'user123',
-        assignedDate: _weekStartDate.add(const Duration(days: 2)),
-        isCompleted: false,
-      ),
-      Routine(
-        id: '4',
-        name: 'Abdominaux',
-        description: '4 séries de 12 crunchs',
-        userId: 'user123',
-        assignedDate: _weekStartDate.add(const Duration(days: 3)),
-        isCompleted: false,
-      ),
-      Routine(
-        id: '5',
-        name: 'Fentes',
-        description: '3 séries de 10 fentes par jambe',
-        userId: 'user123',
-        assignedDate: _weekStartDate.add(const Duration(days: 4)),
-        isCompleted: false,
-      ),
-    ];
+  // Charge les routines depuis Firebase
+  void _loadRoutines() async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      // Récupère l'ID de l'utilisateur connecté
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        // Si aucun utilisateur n'est connecté, retourner à l'écran de connexion
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+        return;
+      }
+      
+      // Récupère les routines de l'utilisateur pour la semaine
+      final routines = await _firebaseService.getUserRoutinesForWeek(
+        currentUser.uid,
+        _weekStartDate,
+      );
+      
+      if (mounted) {
+        setState(() {
+          _routines = routines;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        
+        // Affiche un message d'erreur
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors du chargement des routines: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
   }
 
   // Navigation vers la semaine précédente
   void _previousWeek() {
     setState(() {
       _weekStartDate = _weekStartDate.subtract(const Duration(days: 7));
-      _loadRoutines();
     });
+    _loadRoutines();
   }
 
   // Navigation vers la semaine suivante
   void _nextWeek() {
     setState(() {
       _weekStartDate = _weekStartDate.add(const Duration(days: 7));
-      _loadRoutines();
     });
+    _loadRoutines();
   }
 
   // Obtenir les routines pour un jour spécifique
@@ -113,41 +120,73 @@ class _WeeklyRoutinesScreenState extends State<WeeklyRoutinesScreen> {
   }
 
   // Marquer une routine comme complétée/non complétée
-  void _toggleRoutineCompletion(Routine routine) {
-    setState(() {
-      // Localiser et modifier la routine dans la liste
-      final index = _routines.indexWhere((r) => r.id == routine.id);
-      if (index != -1) {
-        // Créer une nouvelle routine avec le statut inversé
-        final updatedRoutine = Routine(
-          id: routine.id,
-          name: routine.name,
-          description: routine.description,
-          userId: routine.userId,
-          assignedDate: routine.assignedDate,
-          isCompleted: !routine.isCompleted,
-        );
+  void _toggleRoutineCompletion(Routine routine) async {
+    // Affiche un indicateur de chargement
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+    
+    try {
+      // Inverse l'état de complétion
+      final updatedStatus = !routine.isCompleted;
+      
+      // Mise à jour dans Firestore
+      if (updatedStatus) {
+        // Si la routine est complétée, mettre à jour le statut
+        await _firebaseService.completeRoutine(routine.id);
         
-        // Remplacer l'ancienne routine par la nouvelle
-        _routines[index] = updatedRoutine;
+        // Mettre à jour les statistiques de l'utilisateur
+        await _firebaseService.updateUserStats(
+          FirebaseAuth.instance.currentUser!.uid,
+          scoreIncrease: 5, // Augmenter le score de 5 points
+        );
+      } else {
+        // Si la routine est démarquée, mettre à jour le statut
+        // Dans cet exemple, nous ne fournissons pas de méthode pour démarquer
+        // une routine dans le service Firebase, donc nous pourrions ajouter cette
+        // fonctionnalité au service
+        await _firebaseService.uncompleteRoutine(routine.id);
+      }
+      
+      // Recharger les routines pour mettre à jour l'interface
+      await _loadRoutines();
+      
+      // Fermer l'indicateur de chargement
+      if (mounted) {
+        Navigator.pop(context);
         
         // Afficher un message de confirmation
-        final message = updatedRoutine.isCompleted
+        final message = updatedStatus
             ? 'Bravo ! Routine "${routine.name}" complétée !'
             : 'Routine "${routine.name}" marquée comme non complétée';
             
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(message),
-            backgroundColor: updatedRoutine.isCompleted
+            backgroundColor: updatedStatus
                 ? AppTheme.successColor
                 : Colors.grey[700],
           ),
         );
-        
-        // TODO: Mettre à jour le statut dans Firebase
       }
-    });
+    } catch (e) {
+      // Fermer l'indicateur de chargement en cas d'erreur
+      if (mounted) {
+        Navigator.pop(context);
+        
+        // Afficher un message d'erreur
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de la mise à jour de la routine: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -199,120 +238,150 @@ class _WeeklyRoutinesScreenState extends State<WeeklyRoutinesScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // En-tête avec navigation de semaine
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(),
+            )
+          : Column(
               children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios),
-                  onPressed: _previousWeek,
+                // En-tête avec navigation de semaine
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_ios),
+                        onPressed: _previousWeek,
+                      ),
+                      Text(
+                        'Semaine du ${DateFormat('d MMMM', 'fr_FR').format(_weekStartDate)}',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.arrow_forward_ios),
+                        onPressed: _nextWeek,
+                      ),
+                    ],
+                  ),
                 ),
-                Text(
-                  'Semaine du ${DateFormat('d MMMM', 'fr_FR').format(_weekStartDate)}',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.arrow_forward_ios),
-                  onPressed: _nextWeek,
+                
+                // Liste des jours de la semaine et routines
+                Expanded(
+                  child: _routines.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.fitness_center,
+                                size: 80,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Aucune routine programmée pour cette semaine',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[500],
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: 7, // 7 jours de la semaine
+                          itemBuilder: (context, index) {
+                            final day = _weekStartDate.add(Duration(days: index));
+                            final routinesForDay = _getRoutinesForDay(day);
+                            
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // En-tête du jour
+                                Container(
+                                  color: AppTheme.cardColor,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16.0, 
+                                    vertical: 8.0,
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        _formatDate(day),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${routinesForDay.length} routine(s)',
+                                        style: TextStyle(
+                                          color: Colors.grey[400],
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                
+                                // Liste des routines du jour
+                                if (routinesForDay.isEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.all(16.0),
+                                    child: Text(
+                                      'Aucune routine programmée',
+                                      style: TextStyle(
+                                        color: Colors.grey[500],
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  ...routinesForDay.map((routine) => _buildRoutineItem(routine)),
+                                
+                                const Divider(height: 1),
+                              ],
+                            );
+                          },
+                        ),
                 ),
               ],
             ),
-          ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          // Get routines for today
+          final now = DateTime.now();
+          final routinesForToday = _getRoutinesForDay(now);
           
-          // Liste des jours de la semaine et routines
-          Expanded(
-            child: ListView.builder(
-              itemCount: 7, // 7 jours de la semaine
-              itemBuilder: (context, index) {
-                final day = _weekStartDate.add(Duration(days: index));
-                final routinesForDay = _getRoutinesForDay(day);
-                
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // En-tête du jour
-                    Container(
-                      color: AppTheme.cardColor,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0, 
-                        vertical: 8.0,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            _formatDate(day),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          Text(
-                            '${routinesForDay.length} routine(s)',
-                            style: TextStyle(
-                              color: Colors.grey[400],
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    
-                    // Liste des routines du jour
-                    if (routinesForDay.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Text(
-                          'Aucune routine programmée',
-                          style: TextStyle(
-                            color: Colors.grey[500],
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      )
-                    else
-                      ...routinesForDay.map((routine) => _buildRoutineItem(routine)),
-                    
-                    const Divider(height: 1),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
+          if (routinesForToday.isEmpty) {
+            // No routines available for today
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Aucune routine disponible pour aujourd\'hui')),
+            );
+          } else {
+            // Take first incomplete routine as example
+            final routine = routinesForToday.firstWhere(
+              (r) => !r.isCompleted,
+              orElse: () => routinesForToday.first,
+            );
+            
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => RoutineValidationScreen(routine: routine),
+              ),
+            ).then((_) {
+              // Reload routines after returning
+              _loadRoutines();
+            });
+          }
+        },
+        backgroundColor: AppTheme.primaryColor,
+        child: const Icon(Icons.fitness_center),
       ),
-floatingActionButton: FloatingActionButton(
-  onPressed: () {
-    // Version simplifiée qui prend simplement la première routine comme exemple
-    if (_routines.isNotEmpty) {
-      // Prendre simplement la première routine comme exemple
-      final sampleRoutine = _routines.first;
-      
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => RoutineValidationScreen(routine: sampleRoutine),
-        ),
-      ).then((_) {
-        setState(() {
-          _loadRoutines();
-        });
-      });
-    } else {
-      // Pas de routines disponibles
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Aucune routine disponible')),
-      );
-    }
-  },
-  backgroundColor: AppTheme.primaryColor,
-  child: const Icon(Icons.fitness_center),
-),
-      // Ajout d'un drawer
       drawer: Drawer(
         backgroundColor: AppTheme.backgroundColor,
         child: ListView(
@@ -323,7 +392,7 @@ floatingActionButton: FloatingActionButton(
                 color: AppTheme.primaryColor,
               ),
               accountName: Text(
-                'Thomas Martin',
+                'Utilisateur',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 16,
@@ -338,7 +407,7 @@ floatingActionButton: FloatingActionButton(
               currentAccountPicture: CircleAvatar(
                 backgroundColor: AppTheme.accentColor,
                 child: Text(
-                  'T',
+                  'U',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -360,6 +429,8 @@ floatingActionButton: FloatingActionButton(
             ListTile(
               leading: const Icon(Icons.fitness_center, color: Colors.white),
               title: const Text('Mes routines'),
+              selected: true,
+              selectedTileColor: Color.fromRGBO(61, 90, 254, 0.1),
               onTap: () {
                 Navigator.pop(context); // Ferme le drawer
               },
@@ -379,25 +450,73 @@ floatingActionButton: FloatingActionButton(
           
             const Divider(color: Colors.grey),
             
-            // Paramètres et déconnexion
-            ListTile(
-              leading: const Icon(Icons.settings, color: Colors.grey),
-              title: const Text('Paramètres'),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Paramètres (à venir)')),
-                );
-              },
-            ),
+            // Déconnexion
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.redAccent),
               title: const Text('Déconnexion'),
-              onTap: () {
+              onTap: () async {
+                // Ferme le drawer
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Déconnexion (à venir)')),
-                );
+                
+                // Affiche un dialogue de confirmation
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    backgroundColor: AppTheme.cardColor,
+                    title: const Text('Déconnexion'),
+                    content: const Text('Êtes-vous sûr de vouloir vous déconnecter ?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Annuler'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Déconnexion'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.redAccent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ) ?? false;
+
+                if (confirmed && context.mounted) {
+                  try {
+                    // Affiche un indicateur de chargement
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => const Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    );
+                    
+                    // Appel au service Firebase pour la déconnexion
+                    await _firebaseService.signOut();
+                    
+                    // Ferme l'indicateur de chargement
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                    }
+                    
+                    // L'AuthWrapper détectera le changement d'état d'authentification
+                    // et reviendra automatiquement à l'écran de connexion
+                  } catch (e) {
+                    // Ferme l'indicateur de chargement en cas d'erreur
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      
+                      // Affiche un message d'erreur
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Erreur lors de la déconnexion: $e'),
+                          backgroundColor: Colors.redAccent,
+                        ),
+                      );
+                    }
+                  }
+                }
               },
             ),
           ],
@@ -455,9 +574,7 @@ floatingActionButton: FloatingActionButton(
           ),
         ).then((_) {
           // Recharger les routines après le retour de l'écran de validation
-          setState(() {
-            _loadRoutines();
-          });
+          _loadRoutines();
         });
       },
     );

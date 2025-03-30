@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_ssc/models/routine.dart';
 import 'package:flutter_ssc/models/user.dart';
 import 'package:flutter_ssc/theme/app_theme.dart';
+import 'package:flutter_ssc/services/firebase_service.dart';
+import 'package:flutter_ssc/screens/admin/admin_schedule_screen.dart';
 import 'package:intl/intl.dart';
 
 class AdminCreateRoutineScreen extends StatefulWidget {
@@ -77,6 +79,9 @@ class _AdminCreateRoutineScreenState extends State<AdminCreateRoutineScreen> {
   // Dates sélectionnées
   final List<DateTime> _selectedDates = [];
   
+  // Variable de chargement
+  bool _isLoading = false;
+  
   @override
   void initState() {
     super.initState();
@@ -147,40 +152,66 @@ class _AdminCreateRoutineScreenState extends State<AdminCreateRoutineScreen> {
     });
   }
   
-  // Crée les routines pour l'utilisateur
-  void _createRoutines() {
+  // Créer les routines pour l'utilisateur
+  void _createRoutines() async {
     if (_formKey.currentState!.validate() && _selectedDates.isNotEmpty) {
-      final List<Routine> routines = [];
-      
-      // Crée une routine pour chaque date sélectionnée
-      for (final date in _selectedDates) {
-        final routine = Routine(
-          id: DateTime.now().millisecondsSinceEpoch.toString() + date.day.toString(),
-          name: _selectedExercise!,
-          description: _descriptionController.text,
-          userId: _selectedUser!.id,
-          assignedDate: date,
-        );
-        
-        routines.add(routine);
-      }
-      
-      // TODO: Sauvegarder les routines dans Firebase
-      
-      // Affiche un message de confirmation
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${routines.length} routine(s) créée(s) pour ${_selectedUser!.name}',
-          ),
-          backgroundColor: AppTheme.successColor,
-        ),
-      );
-      
-      // Réinitialise le formulaire
+      // Afficher un indicateur de chargement
       setState(() {
-        _selectedDates.clear();
+        _isLoading = true;
       });
+      
+      try {
+        final List<Routine> routines = [];
+        
+        // Crée une routine pour chaque date sélectionnée
+        for (final date in _selectedDates) {
+          final routine = Routine(
+            id: '', // L'ID sera généré par Firestore
+            name: _selectedExercise!,
+            description: _descriptionController.text,
+            userId: _selectedUser!.id,
+            assignedDate: date,
+          );
+          
+          routines.add(routine);
+        }
+        
+        // Sauvegarder les routines dans Firebase
+        final firebaseService = FirebaseService();
+        
+        // Utiliser la méthode addRoutines pour sauvegarder toutes les routines
+        for (var routine in routines) {
+          await firebaseService.addRoutine(routine);
+        }
+        
+        // Cacher l'indicateur de chargement
+        setState(() {
+          _isLoading = false;
+          _selectedDates.clear(); // Réinitialise les dates sélectionnées
+        });
+        
+        // Affiche un message de confirmation
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${routines.length} routine(s) créée(s) pour ${_selectedUser!.name}',
+            ),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+      } catch (e) {
+        // En cas d'erreur, cacher l'indicateur de chargement et afficher un message d'erreur
+        setState(() {
+          _isLoading = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de la création des routines: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     } else if (_selectedDates.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -205,6 +236,142 @@ class _AdminCreateRoutineScreenState extends State<AdminCreateRoutineScreen> {
       appBar: AppBar(
         title: const Text('Créer des routines'),
         centerTitle: true,
+        // Ne pas définir de 'leading' pour laisser Flutter gérer l'icône hamburger
+      ),
+      drawer: Drawer(
+        backgroundColor: AppTheme.backgroundColor,
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            // En-tête du drawer
+            const UserAccountsDrawerHeader(
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor,
+              ),
+              accountName: Text(
+                'Coach', // Ou récupérer le nom du coach connecté
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              accountEmail: Text(
+                'Coach',
+                style: TextStyle(
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+              currentAccountPicture: CircleAvatar(
+                backgroundColor: AppTheme.accentColor,
+                child: Text(
+                  'C',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+            ),
+            
+            // Menu admin
+            ListTile(
+              leading: const Icon(Icons.assignment, color: Colors.white),
+              title: const Text('Créer des routines'),
+              selected: true, // Mettre à true pour indiquer l'écran actuel
+              selectedTileColor: Color.fromRGBO(61, 90, 254, 0.1),
+              onTap: () {
+                Navigator.pop(context); // Ferme le drawer
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.event, color: Colors.white),
+              title: const Text('Gestion du calendrier'),
+              onTap: () {
+                Navigator.pop(context); // Ferme le drawer
+                
+                // Navigation vers la page de gestion du calendrier
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AdminScheduleScreen()),
+                );
+              },
+            ),
+            
+            const Divider(color: Colors.grey),
+            
+            // Déconnexion
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.redAccent),
+              title: const Text('Déconnexion'),
+              onTap: () async {
+                // Ferme le drawer
+                Navigator.pop(context);
+                
+                // Affiche un dialogue de confirmation
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    backgroundColor: AppTheme.cardColor,
+                    title: const Text('Déconnexion'),
+                    content: const Text('Êtes-vous sûr de vouloir vous déconnecter ?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Annuler'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Déconnexion'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.redAccent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ) ?? false;
+
+                if (confirmed && context.mounted) {
+                  try {
+                    // Affiche un indicateur de chargement
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => const Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    );
+                    
+                    // Appel au service Firebase pour la déconnexion
+                    final firebaseService = FirebaseService();
+                    await firebaseService.signOut();
+                    
+                    // Ferme l'indicateur de chargement
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                    }
+                    
+                    // L'AuthWrapper détectera le changement d'état d'authentification
+                    // et reviendra automatiquement à l'écran de connexion
+                  } catch (e) {
+                    // Ferme l'indicateur de chargement en cas d'erreur
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      
+                      // Affiche un message d'erreur
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Erreur lors de la déconnexion: $e'),
+                          backgroundColor: Colors.redAccent,
+                        ),
+                      );
+                    }
+                  }
+                }
+              },
+            ),
+          ],
+        ),
       ),
       body: Form(
         key: _formKey,
@@ -494,18 +661,27 @@ class _AdminCreateRoutineScreenState extends State<AdminCreateRoutineScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _createRoutines,
+                  onPressed: _isLoading ? null : _createRoutines,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryColor,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
-                  child: const Text(
-                    'Créer les routines',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text(
+                          'Créer les routines',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
             ),

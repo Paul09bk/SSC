@@ -4,6 +4,7 @@ import 'package:flutter_ssc/screens/user/weekly_routines_screen.dart';
 import 'package:flutter_ssc/screens/user/class_booking_screen.dart';
 import 'package:flutter_ssc/screens/user/routine_validation_screen.dart';
 import 'package:flutter_ssc/models/routine.dart';
+import 'package:flutter_ssc/services/firebase_service.dart';
 
 class TamagotchiScreen extends StatefulWidget {
   const TamagotchiScreen({super.key});
@@ -126,16 +127,76 @@ class _TamagotchiScreenState extends State<TamagotchiScreen> {
                 );
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.redAccent),
-              title: const Text('Déconnexion'),
-              onTap: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Déconnexion (à venir)')),
-                );
-              },
+            // Dans app_navigation.dart, mettez à jour la ListTile de déconnexion
+ListTile(
+  leading: const Icon(Icons.logout, color: Colors.redAccent),
+  title: const Text('Déconnexion'),
+  onTap: () async {
+    // Ferme le drawer
+    Navigator.pop(context);
+    
+    // Affiche un dialogue de confirmation
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.cardColor,
+        title: const Text('Déconnexion'),
+        content: const Text('Êtes-vous sûr de vouloir vous déconnecter ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Déconnexion'),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.redAccent,
             ),
+          ),
+        ],
+      ),
+    ) ?? false;
+
+    if (confirmed && context.mounted) {
+      try {
+        // Affiche un indicateur de chargement
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+        
+        // Appel au service Firebase pour la déconnexion
+        final firebaseService = FirebaseService();
+        await firebaseService.signOut();
+        
+        // Ferme l'indicateur de chargement
+        if (context.mounted) {
+          Navigator.pop(context);
+        }
+        
+        // L'AuthWrapper détectera le changement d'état d'authentification
+        // et reviendra automatiquement à l'écran de connexion
+      } catch (e) {
+        // Ferme l'indicateur de chargement en cas d'erreur
+        if (context.mounted) {
+          Navigator.pop(context);
+          
+          // Affiche un message d'erreur
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erreur lors de la déconnexion: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
+    }
+  },
+),
           ],
         ),
       ),

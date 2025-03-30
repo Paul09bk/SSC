@@ -91,3 +91,8 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+
+# Configuration web
+web:
+  renderer: html # ou 'canvaskit' selon vos besoins

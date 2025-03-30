@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_ssc/models/user.dart';
 import 'package:flutter_ssc/models/routine.dart';
 import 'package:flutter_ssc/models/class_session.dart';
@@ -40,11 +41,16 @@ class FirebaseService {
       );
       
       if (userCredential.user != null) {
-        // Création du profil dans Firestore
+        // Création du profil dans Firestore avec valeurs par défaut pour un nouvel utilisateur
         final appUser = AppUser(
           id: userCredential.user!.uid,
           name: name,
           email: email,
+          isAdmin: false, // Par défaut, un nouvel utilisateur n'est pas admin
+          trainingScore: 0,
+          objectives: 0,
+          totalObjectives: 5, // Par défaut, 5 objectifs à atteindre
+          tamagotchiLevel: 'beginner',
         );
         
         await _usersCollection.doc(appUser.id).set(appUser.toMap());
@@ -52,6 +58,7 @@ class FirebaseService {
       }
     } catch (e) {
       _logger.warning('Erreur d\'inscription: $e');
+      rethrow; // Renvoie l'erreur pour que l'appelant puisse la gérer
     }
     return null;
   }
@@ -71,6 +78,7 @@ class FirebaseService {
       }
     } catch (e) {
       _logger.warning('Erreur de connexion: $e');
+      rethrow; // Renvoie l'erreur pour que l'appelant puisse la gérer
     }
     return null;
   }
@@ -88,16 +96,40 @@ class FirebaseService {
       final doc = await _usersCollection.doc(userId).get();
       if (doc.exists) {
         return AppUser.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+      } else {
+        // Si l'utilisateur existe dans Auth mais pas dans Firestore,
+        // on peut créer automatiquement un profil de base
+        if (currentUser != null && currentUser!.uid == userId) {
+          final newUser = AppUser(
+            id: userId,
+            name: currentUser!.displayName ?? 'Utilisateur',
+            email: currentUser!.email ?? '',
+            isAdmin: false,
+            trainingScore: 0,
+            objectives: 0,
+            totalObjectives: 5,
+            tamagotchiLevel: 'beginner',
+          );
+          
+          await _usersCollection.doc(userId).set(newUser.toMap());
+          return newUser;
+        }
       }
     } catch (e) {
       _logger.warning('Erreur récupération utilisateur: $e');
+      rethrow;
     }
     return null;
   }
 
   // Mettre à jour un utilisateur
   Future<void> updateUser(AppUser user) async {
-    await _usersCollection.doc(user.id).update(user.toMap());
+    try {
+      await _usersCollection.doc(user.id).update(user.toMap());
+    } catch (e) {
+      _logger.warning('Erreur mise à jour utilisateur: $e');
+      rethrow;
+    }
   }
 
   // Récupérer tous les utilisateurs (admin seulement)
@@ -118,8 +150,18 @@ class FirebaseService {
   // Ajouter une nouvelle routine
   Future<String?> addRoutine(Routine routine) async {
     try {
-      final docRef = await _routinesCollection.add(routine.toMap());
-      return docRef.id;
+      // Préparer la routine pour Firestore
+      final routineData = routine.toMap();
+      
+      // Si l'ID est vide, permettre à Firestore de générer un ID
+      if (routine.id.isEmpty) {
+        final docRef = await _routinesCollection.add(routineData);
+        return docRef.id;
+      } else {
+        // Sinon utiliser l'ID fourni
+        await _routinesCollection.doc(routine.id).set(routineData);
+        return routine.id;
+      }
     } catch (e) {
       _logger.warning('Erreur ajout routine: $e');
       return null;
@@ -149,16 +191,27 @@ class FirebaseService {
     final weekEnd = weekStart.add(const Duration(days: 7));
     
     try {
+      // Convertir les dates en Timestamp pour la requête Firestore
+      final startTimestamp = Timestamp.fromDate(weekStart);
+      final endTimestamp = Timestamp.fromDate(weekEnd);
+      
       final QuerySnapshot snapshot = await _routinesCollection
           .where('userId', isEqualTo: userId)
-          .where('assignedDate', isGreaterThanOrEqualTo: weekStart)
-          .where('assignedDate', isLessThan: weekEnd)
+          .where('assignedDate', isGreaterThanOrEqualTo: startTimestamp)
+          .where('assignedDate', isLessThan: endTimestamp)
           .orderBy('assignedDate')
           .get();
           
-      return snapshot.docs.map((doc) => 
-        Routine.fromMap(doc.data() as Map<String, dynamic>, doc.id)
-      ).toList();
+      return snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        
+        // Convertir le Timestamp en DateTime
+        if (data['assignedDate'] is Timestamp) {
+          data['assignedDate'] = (data['assignedDate'] as Timestamp).toDate().toIso8601String();
+        }
+        
+        return Routine.fromMap(data, doc.id);
+      }).toList();
     } catch (e) {
       _logger.warning('Erreur récupération routines par semaine: $e');
       return [];
@@ -167,7 +220,22 @@ class FirebaseService {
 
   // Marquer une routine comme complétée
   Future<void> completeRoutine(String routineId) async {
-    await _routinesCollection.doc(routineId).update({'isCompleted': true});
+    try {
+      await _routinesCollection.doc(routineId).update({'isCompleted': true});
+    } catch (e) {
+      _logger.warning('Erreur marquage routine comme complétée: $e');
+      rethrow;
+    }
+  }
+  
+  // Marquer une routine comme non complétée
+  Future<void> uncompleteRoutine(String routineId) async {
+    try {
+      await _routinesCollection.doc(routineId).update({'isCompleted': false});
+    } catch (e) {
+      _logger.warning('Erreur marquage routine comme non complétée: $e');
+      rethrow;
+    }
   }
 
   // Gestion des cours
@@ -188,14 +256,23 @@ class FirebaseService {
     try {
       // Récupère uniquement les cours à venir
       final now = DateTime.now();
+      final nowTimestamp = Timestamp.fromDate(now);
+      
       final QuerySnapshot snapshot = await _classesCollection
-          .where('date', isGreaterThanOrEqualTo: now.toIso8601String())
+          .where('date', isGreaterThanOrEqualTo: nowTimestamp)
           .orderBy('date')
           .get();
           
-      return snapshot.docs.map((doc) => 
-        ClassSession.fromFirestore(doc)
-      ).toList();
+      return snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        
+        // Convertir le Timestamp en DateTime
+        if (data['date'] is Timestamp) {
+          data['date'] = (data['date'] as Timestamp).toDate().toIso8601String();
+        }
+        
+        return ClassSession.fromMap(data, doc.id);
+      }).toList();
     } catch (e) {
       _logger.warning('Erreur récupération cours: $e');
       return [];
@@ -210,9 +287,16 @@ class FirebaseService {
           .orderBy('date')
           .get();
           
-      return snapshot.docs.map((doc) => 
-        ClassSession.fromFirestore(doc)
-      ).toList();
+      return snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        
+        // Convertir le Timestamp en DateTime
+        if (data['date'] is Timestamp) {
+          data['date'] = (data['date'] as Timestamp).toDate().toIso8601String();
+        }
+        
+        return ClassSession.fromMap(data, doc.id);
+      }).toList();
     } catch (e) {
       _logger.warning('Erreur récupération cours du coach: $e');
       return [];
@@ -315,6 +399,57 @@ class FirebaseService {
       });
     } catch (e) {
       _logger.warning('Erreur mise à jour statistiques: $e');
+      rethrow;
+    }
+  }
+  
+  // Récupération du mot de passe
+  Future<void> resetPassword(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+    } catch (e) {
+      _logger.warning('Erreur récupération mot de passe: $e');
+      rethrow;
+    }
+  }
+  
+  // Ajouter plusieurs routines en une seule fois (pour les coachs)
+  Future<List<String>> addMultipleRoutines(List<Routine> routines) async {
+    final List<String> routineIds = [];
+    
+    try {
+      // Utiliser une batch pour des performances optimales
+      final batch = _firestore.batch();
+      
+      for (final routine in routines) {
+        // Préparer la routine pour Firestore
+        final routineData = routine.toMap();
+        
+        // Créer une référence de document
+        final docRef = _routinesCollection.doc();
+        batch.set(docRef, routineData);
+        
+        routineIds.add(docRef.id);
+      }
+      
+      // Exécuter toutes les opérations en une fois
+      await batch.commit();
+      
+      return routineIds;
+    } catch (e) {
+      _logger.warning('Erreur ajout multiples routines: $e');
+      return [];
+    }
+  }
+  
+  // Supprimer une routine
+  Future<bool> deleteRoutine(String routineId) async {
+    try {
+      await _routinesCollection.doc(routineId).delete();
+      return true;
+    } catch (e) {
+      _logger.warning('Erreur suppression routine: $e');
+      return false;
     }
   }
 }
