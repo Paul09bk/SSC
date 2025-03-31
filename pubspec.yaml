@@ -38,6 +38,7 @@ dependencies:
   provider: ^6.1.4
   intl: ^0.18.1
   logging: ^1.2.0
+  shared_preferences: ^2.2.0
   
 dev_dependencies:
   flutter_test:
@@ -60,6 +61,19 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+
+  assets:
+    - assets/images/tamagotchi/beginner.png
+    - assets/images/tamagotchi/novice.png
+    - assets/images/tamagotchi/apprentice.png
+    - assets/images/tamagotchi/intermediate.png
+    - assets/images/tamagotchi/advanced.png
+    - assets/images/tamagotchi/expert.png
+    - assets/images/tamagotchi/master.png
+    - assets/images/tamagotchi/happy.png
+    - assets/images/tamagotchi/neutral.png
+    - assets/images/tamagotchi/tired.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
@@ -91,5 +105,4 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
-
 

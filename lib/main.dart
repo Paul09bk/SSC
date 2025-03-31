@@ -8,6 +8,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_ssc/services/firebase_service.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Importez le fichier de configuration Firebase généré
 import 'firebase_options.dart';
@@ -24,6 +26,15 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
   
+
+  if (kDebugMode) {
+    try {
+      FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
+      FirebaseAuth.instance.useAuthEmulator('localhost', 9099);
+    } catch (e) {
+      print('Erreur de configuration de l\'émulateur Firebase: $e');
+    }
+  }
   // Initialisation de Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
